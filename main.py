@@ -1,4 +1,4 @@
-from itertools import count
+
 import os
 import subprocess
 import time
@@ -6,6 +6,17 @@ import logging
 from pathlib import Path
 import json
 from watchdog.events import FileSystemEventHandler
+from platformdirs import user_log_dir, user_config_dir
+
+CONFIG_DIR = Path(user_config_dir('meta-cleaner', 'MrIncognito7'))
+CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+CONFIG_FILE = CONFIG_DIR / "config.json"
+
+def load_saved_folders() -> list[str]:
+    ...  # reads {"folders": [...]} from config.json, [] if missing/corrupt
+
+def save_folders(folders: list[str]):
+    ...  # dedupes, sorts, writes back to config.json
 SENSITIVE_TAGS = {
     # GPS / Location
     "GPS": "reveals exact physical location",
@@ -116,12 +127,19 @@ class Precheck():
     def check_folder(folder: Path):
         sensit=0
         clean=0
-        result = subprocess.run(
-            ["exiftool", "-j", "-a", "-u", "-g1", "-r", str(folder)],
-            capture_output=True, text=True
-        )
-        all_files_data = json.loads(result.stdout)
-
+        try:
+            result = subprocess.run(
+                ["exiftool", "-j", "-a", "-u", "-g1", "-r", str(folder)],
+                capture_output=True, text=True  
+            )
+        except FileNotFoundError:
+            logger.error("exiftool not installed. Run: sudo apt install libimage-exiftool-perl")
+            return
+        try:
+            all_files_data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            logger.error(f"No readable files in : {folder}.")
+            return
         for file_data in all_files_data:
             name = file_data["SourceFile"]
             sensitive = Precheck.find_sensitive_tags(file_data)
@@ -131,7 +149,7 @@ class Precheck():
                 clean+=1
         
         if sensit > 0:
-            print(f"Checked {len(all_files_data)} files in {folder}: {clean} clean, {sensit} with sensitive metadata.")
+            logger.info(f"Checked {len(all_files_data)} files in {folder}: {clean} clean, {sensit} with sensitive metadata.")
             confirmation = confirm("Do you want to wipe sensitive metadata from these files?")
             if confirmation:
                 for file_data in all_files_data:
@@ -139,11 +157,11 @@ class Precheck():
                     sensitive = Precheck.find_sensitive_tags(file_data)
                     if sensitive:
                         wipe_image(Path(name))
-                print(f"Wiped sensitive metadata from {sensit} files in {folder}.")
+                logger.info(f"Wiped sensitive metadata from {sensit} files in {folder}.")
             else:
-                print("Wipe operation cancelled by user.Sesnitive files were not modified.")
+                logger.info("Wipe operation cancelled by user.Sesnitive files were not modified.")
         else:
-            print(f"All files in {folder} were clean")
+            logger.info(f"All files in {folder} were clean")
 
 LOG_FILE = os.path.expanduser("~/.metadata-wiper.log")
 logging.basicConfig(

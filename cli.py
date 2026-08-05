@@ -8,6 +8,12 @@ from main import logger
 import time
 from pathlib import Path
 from main import load_and_check_folders
+from platformdirs import user_log_dir, user_config_dir
+
+from main import save_folders,load_saved_folders
+restart_option = False
+WATCH_DIRS = load_saved_folders()
+
 def main():
     observer = Observer()
     handler = NewImageHandler()
@@ -27,12 +33,13 @@ def main():
         return
 
     observer.start()
-    logger.info("Metadata wiper running. Press Ctrl+C to stop.")
+    logger.info("Metadata wiper running. Press Ctrl+C to stop... Press Ctrl+V to add another folder to watch.")
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
         observer.stop()
+    
     observer.join()
 
 parser = argparse.ArgumentParser(
@@ -48,15 +55,25 @@ parser.add_argument(
     action="append",
     default=[]
 )
-
+parser.add_argument('-r','--restart',action='store_true',help='Automatically launch the script on system startup. This will add a cron job for the current user.')
+parser.add_argument('--forget',action='store_true',help='Forget all previously saved folders to watch. This will clear the saved configuration.')
 args = parser.parse_args()
-
+if args.restart:
+    restart_option = True
+    ## restart logic here
+    print("Setting up automatic launch on system startup...")
+if args.forget:
+    save_folders([])
+    print("All saved folders have been forgotten.")
 if args.folder:
-    WATCH_DIRS = args.folder
+    WATCH_DIRS.extend(args.folder)
+    save_folders(WATCH_DIRS)
     load_and_check_folders(WATCH_DIRS)
     for d in WATCH_DIRS:
         full_path = os.path.expanduser(d)
         Precheck.check_folder(full_path)
+    main()
+if restart_option == True:
     main()
 
 

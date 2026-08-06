@@ -1,4 +1,4 @@
-
+import shutil
 import os
 import subprocess
 import time
@@ -7,16 +7,49 @@ from pathlib import Path
 import json
 from watchdog.events import FileSystemEventHandler
 from platformdirs import user_log_dir, user_config_dir
+import copy
+LOG_DIR = Path(user_log_dir('meta-cleaner', 'MrIncognito7'))
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "meta-cleaner.log"
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s: %(message)s",
+)
+logger = logging.getLogger("meta-cleaner")
+console = logging.StreamHandler()
+console.setFormatter(logging.Formatter("%(message)s"))
+logger.addHandler(console)
 
 CONFIG_DIR = Path(user_config_dir('meta-cleaner', 'MrIncognito7'))
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "config.json"
+DEFAULT_CONFIG = {
+    "watch_folders": [],
+    "settings": {
+        "auto_start": False,
+        "log_level": "INFO",
+    }
+}
+def check_exiftool_installed() -> bool:
+    if shutil.which("exiftool") is None:
+        logger.error(
+            "exiftool not found. Meta-Cleaner cannot clean metadata without it.\n"
+            "Install it with: sudo apt install libimage-exiftool-perl"
+        )
+        return False
+    return True
+def load_config():
+    if not CONFIG_FILE.exists():
+        save_config(DEFAULT_CONFIG)
+        return copy.deepcopy(DEFAULT_CONFIG)
 
-def load_saved_folders() -> list[str]:
-    ...  # reads {"folders": [...]} from config.json, [] if missing/corrupt
+    with open(CONFIG_FILE, "r") as f:
+        return json.load(f)
+def save_config(config):
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(config, f, indent=4)
 
-def save_folders(folders: list[str]):
-    ...  # dedupes, sorts, writes back to config.json
 SENSITIVE_TAGS = {
     # GPS / Location
     "GPS": "reveals exact physical location",
@@ -105,6 +138,7 @@ def confirm(question: str) -> bool:
         print("Please answer 'y' or 'n'.")
 
 class Precheck():
+    @staticmethod
     def find_sensitive_tags(file_data):
         """Flatten the grouped JSON and return sensitive tags with their reason."""
         flat = {}
@@ -123,7 +157,7 @@ class Precheck():
                     found.append((tag_name, tag_value, reason))
                     break
         return found
-
+    @staticmethod
     def check_folder(folder: Path):
         sensit=0
         clean=0
@@ -163,16 +197,6 @@ class Precheck():
         else:
             logger.info(f"All files in {folder} were clean")
 
-LOG_FILE = os.path.expanduser("~/.metadata-wiper.log")
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s: %(message)s",
-)
-logger = logging.getLogger("metadata-wiper")
-console = logging.StreamHandler()
-console.setFormatter(logging.Formatter("%(message)s"))
-logger.addHandler(console)
 
 def load_and_check_folders(watch_dirs):
     for d in watch_dirs:

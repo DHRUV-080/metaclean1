@@ -5,15 +5,17 @@ from main import NewImageHandler
 from watchdog.observers import Observer
 import os
 from main import logger
+from main import load_and_check_folders
 import time
 from pathlib import Path
-from main import load_and_check_folders
+from main import load_config,save_config
 from platformdirs import user_log_dir, user_config_dir
-
-from main import save_folders,load_saved_folders
-restart_option = False
-WATCH_DIRS = load_saved_folders()
-
+from main import check_exiftool_installed
+if not check_exiftool_installed():
+    raise SystemExit(1)
+config = load_config()
+WATCH_DIRS = config["watch_folders"]
+settings = config["settings"]
 def main():
     observer = Observer()
     handler = NewImageHandler()
@@ -59,21 +61,41 @@ parser.add_argument('-r','--restart',action='store_true',help='Automatically lau
 parser.add_argument('--forget',action='store_true',help='Forget all previously saved folders to watch. This will clear the saved configuration.')
 args = parser.parse_args()
 if args.restart:
-    restart_option = True
+    config["settings"]["auto_start"] = True
+    save_config(config)
     ## restart logic here
     print("Setting up automatic launch on system startup...")
 if args.forget:
-    save_folders([])
+    config["watch_folders"] = []
+    save_config(config)
     print("All saved folders have been forgotten.")
+    raise SystemExit(0)
 if args.folder:
-    WATCH_DIRS.extend(args.folder)
-    save_folders(WATCH_DIRS)
-    load_and_check_folders(WATCH_DIRS)
-    for d in WATCH_DIRS:
-        full_path = os.path.expanduser(d)
-        Precheck.check_folder(full_path)
-    main()
-if restart_option == True:
-    main()
+    for folder in args.folder:
+        folder = str(Path(folder).expanduser().resolve())
+
+        if not Path(folder).is_dir():
+            logger.warning(f"Skipping invalid folder: {folder}")
+            continue
+
+        if folder in WATCH_DIRS:
+            logger.info(f"Folder already being watched: {folder}")
+            continue
+            
+        WATCH_DIRS.append(folder)
+    config["watch_folders"] = WATCH_DIRS
+    save_config(config)
+load_and_check_folders(WATCH_DIRS)
+for d in WATCH_DIRS:
+    full_path = os.path.expanduser(d)
+    Precheck.check_folder(full_path)
+
+if WATCH_DIRS is None or len(WATCH_DIRS) == 0:
+    logger.error("No valid folders to watch. Exiting... use the -f option to specify folders to watch.")
+    raise SystemExit(1)
+
+main()
+
+
 
 

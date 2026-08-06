@@ -25,8 +25,10 @@ CONFIG_DIR = Path(user_config_dir('meta-cleaner', 'MrIncognito7'))
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = CONFIG_DIR / "config.json"
 DEFAULT_CONFIG = {
+    "version": "1.0",
     "watch_folders": [],
     "settings": {
+
         "auto_start": False,
         "log_level": "INFO",
     }

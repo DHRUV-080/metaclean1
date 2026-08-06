@@ -11,11 +11,18 @@ from pathlib import Path
 from main import load_config,save_config
 from platformdirs import user_log_dir, user_config_dir
 from main import check_exiftool_installed
+
+
 if not check_exiftool_installed():
     raise SystemExit(1)
 config = load_config()
 WATCH_DIRS = config["watch_folders"]
 settings = config["settings"]
+version = config["version"]
+logger.info(f"Meta-Cleaner version {version} starting...")
+
+
+
 def main():
     observer = Observer()
     handler = NewImageHandler()
@@ -86,13 +93,15 @@ if args.folder:
     config["watch_folders"] = WATCH_DIRS
     save_config(config)
 load_and_check_folders(WATCH_DIRS)
-for d in WATCH_DIRS:
-    full_path = os.path.expanduser(d)
-    Precheck.check_folder(full_path)
 
 if WATCH_DIRS is None or len(WATCH_DIRS) == 0:
     logger.error("No valid folders to watch. Exiting... use the -f option to specify folders to watch.")
     raise SystemExit(1)
+
+for d in WATCH_DIRS:
+    full_path = os.path.expanduser(d)
+    Precheck.check_folder(full_path)
+
 
 main()
 

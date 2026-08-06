@@ -14,7 +14,7 @@ Meta-Cleaner is a Python command-line utility that automatically removes sensiti
 ## Project Structure
 
 ```
-cli.py     # CLI entry point, argument parsing, watcher lifecycle
+meta_cleaner.py     # CLI entry point, argument parsing, watcher lifecycle
 main.py    # Metadata cleaning logic, folder management, event handlers
 ```
 
@@ -35,7 +35,7 @@ The folder is saved to the configuration, so it will be monitored again the next
 ### Watch Multiple Folders
 
 ```bash
-cli \
+meta_cleaner \
     -f ~/Pictures \
     -f ~/Downloads \
     -f ~/Desktop
@@ -50,7 +50,7 @@ Each folder is validated before monitoring begins.
 Remove every previously saved watch directory.
 
 ```bash
-cli --forget
+meta_cleaner --forget
 ```
 
 This clears the saved configuration.
@@ -60,7 +60,7 @@ This clears the saved configuration.
 ### Enable Startup
 
 ```bash
-cli --restart
+meta_cleaner --restart
 ```
 
 Configures Meta-Cleaner to launch automatically when the system starts (implementation in progress).

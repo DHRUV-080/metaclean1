@@ -1,3 +1,4 @@
+
 import shutil
 import os
 import subprocess
@@ -5,34 +6,59 @@ import time
 import logging
 from pathlib import Path
 import json
+import copy
+
 from watchdog.events import FileSystemEventHandler
 from platformdirs import user_log_dir, user_config_dir
-import copy
-LOG_DIR = Path(user_log_dir('meta-cleaner', 'MrIncognito7'))
+
+
+# 
+# PATHS / LOGGING
+# 
+
+LOG_DIR = Path(user_log_dir("meta-cleaner", "MrIncognito7"))
 LOG_DIR.mkdir(parents=True, exist_ok=True)
+
 LOG_FILE = LOG_DIR / "meta-cleaner.log"
+
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
     format="%(asctime)s %(levelname)s: %(message)s",
 )
+
 logger = logging.getLogger("meta-cleaner")
+
 console = logging.StreamHandler()
 console.setFormatter(logging.Formatter("%(message)s"))
-logger.addHandler(console)
 
-CONFIG_DIR = Path(user_config_dir('meta-cleaner', 'MrIncognito7'))
+if not logger.handlers:
+    logger.addHandler(console)
+else:
+    # Make sure console output exists even if logging configured elsewhere.
+    if console not in logger.handlers:
+        logger.addHandler(console)
+
+
+# 
+# CONFIG
+# 
+
+CONFIG_DIR = Path(user_config_dir("meta-cleaner", "MrIncognito7"))
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
 CONFIG_FILE = CONFIG_DIR / "config.json"
+
 DEFAULT_CONFIG = {
     "version": "1.0",
     "watch_folders": [],
     "settings": {
-
         "auto_start": False,
         "log_level": "INFO",
-    }
+    },
 }
+
+
 def check_exiftool_installed() -> bool:
     if shutil.which("exiftool") is None:
         logger.error(
@@ -40,17 +66,63 @@ def check_exiftool_installed() -> bool:
             "Install it with: sudo apt install libimage-exiftool-perl"
         )
         return False
+
     return True
+
+
 def load_config():
     if not CONFIG_FILE.exists():
-        save_config(DEFAULT_CONFIG)
+        save_config(copy.deepcopy(DEFAULT_CONFIG))
         return copy.deepcopy(DEFAULT_CONFIG)
 
-    with open(CONFIG_FILE, "r") as f:
-        return json.load(f)
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            config = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.error(f"Could not read config file: {e}")
+        logger.warning("Using default configuration.")
+
+        config = copy.deepcopy(DEFAULT_CONFIG)
+        save_config(config)
+        return config
+
+    # Make sure required keys exist.
+    if not isinstance(config, dict):
+        logger.warning("Invalid config format. Using default configuration.")
+        config = copy.deepcopy(DEFAULT_CONFIG)
+
+    if not isinstance(config.get("watch_folders"), list):
+        config["watch_folders"] = []
+
+    if not isinstance(config.get("settings"), dict):
+        config["settings"] = copy.deepcopy(DEFAULT_CONFIG["settings"])
+
+    for key, value in DEFAULT_CONFIG["settings"].items():
+        config["settings"].setdefault(key, value)
+
+    config.setdefault("version", DEFAULT_CONFIG["version"])
+
+    return config
+
+
 def save_config(config):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f, indent=4)
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+        temp_file = CONFIG_FILE.with_suffix(".tmp")
+
+        with open(temp_file, "w") as f:
+            json.dump(config, f, indent=4)
+
+        temp_file.replace(CONFIG_FILE)
+
+    except OSError as e:
+        logger.error(f"Could not save configuration: {e}")
+
+
+# 
+# SENSITIVE METADATA
+# 
 
 SENSITIVE_TAGS = {
     # GPS / Location
@@ -129,99 +201,212 @@ SENSITIVE_TAGS = {
     "XMP": "may contain edit history, keywords, or embedded location data",
 }
 
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".bmp", ".tiff", ".gif"}
+
+IMAGE_EXTS = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".heic",
+    ".heif",
+    ".bmp",
+    ".tiff",
+    ".gif",
+}
+
+
+# 
+# USER CONFIRMATION
+# 
+
 def confirm(question: str) -> bool:
     while True:
-        answer = input(f"{question} [y/n]: ").strip().lower()
+        try:
+            answer = input(f"{question} [y/n]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return False
+
         if answer in ("y", "yes"):
             return True
-        elif answer in ("n", "no"):
+
+        if answer in ("n", "no"):
             return False
+
         print("Please answer 'y' or 'n'.")
 
-class Precheck():
+
+# 
+# PRECHECK
+# 
+
+class Precheck:
+
     @staticmethod
     def find_sensitive_tags(file_data):
-        """Flatten the grouped JSON and return sensitive tags with their reason."""
+        """Flatten grouped ExifTool JSON and return sensitive tags."""
         flat = {}
+
         for group, value in file_data.items():
             if group == "System":
                 continue
+
             if isinstance(value, dict):
                 flat.update(value)
             else:
                 flat[group] = value
 
         found = []
+
         for tag_name, tag_value in flat.items():
             for keyword, reason in SENSITIVE_TAGS.items():
                 if keyword.lower() in tag_name.lower():
                     found.append((tag_name, tag_value, reason))
                     break
+
         return found
+
     @staticmethod
     def check_folder(folder: Path):
-        sensit=0
-        clean=0
+        sensit = 0
+        clean = 0
+
         try:
             result = subprocess.run(
-                ["exiftool", "-j", "-a", "-u", "-g1", "-r", str(folder)],
-                capture_output=True, text=True  
+                [
+                    "exiftool",
+                    "-j",
+                    "-a",
+                    "-u",
+                    "-g1",
+                    "-r",
+                    str(folder),
+                ],
+                capture_output=True,
+                text=True,
             )
         except FileNotFoundError:
-            logger.error("exiftool not installed. Run: sudo apt install libimage-exiftool-perl")
+            logger.error(
+                "exiftool not installed. "
+                "Run: sudo apt install libimage-exiftool-perl"
+            )
             return
+
+        if result.returncode != 0:
+            logger.error(
+                f"ExifTool failed while checking {folder}: "
+                f"{result.stderr.strip()}"
+            )
+            return
+
         try:
             all_files_data = json.loads(result.stdout)
         except json.JSONDecodeError:
-            logger.error(f"No readable files in : {folder}.")
+            logger.error(f"No readable files in: {folder}")
             return
+
         for file_data in all_files_data:
-            name = file_data["SourceFile"]
             sensitive = Precheck.find_sensitive_tags(file_data)
+
             if sensitive:
-                sensit+=1
+                sensit += 1
             else:
-                clean+=1
-        
+                clean += 1
+
         if sensit > 0:
-            logger.info(f"Checked {len(all_files_data)} files in {folder}: {clean} clean, {sensit} with sensitive metadata.")
-            confirmation = confirm("Do you want to wipe sensitive metadata from these files?")
+            logger.info(
+                f"Checked {len(all_files_data)} files in {folder}: "
+                f"{clean} clean, {sensit} with sensitive metadata."
+            )
+
+            confirmation = confirm(
+                "Do you want to wipe sensitive metadata from these files?"
+            )
+
             if confirmation:
+                wiped = 0
+
                 for file_data in all_files_data:
                     name = file_data["SourceFile"]
                     sensitive = Precheck.find_sensitive_tags(file_data)
-                    if sensitive:
-                        wipe_image(Path(name))
-                logger.info(f"Wiped sensitive metadata from {sensit} files in {folder}.")
-            else:
-                logger.info("Wipe operation cancelled by user.Sesnitive files were not modified.")
-        else:
-            logger.info(f"All files in {folder} were clean")
 
+                    if sensitive:
+                        if wipe_image(Path(name)):
+                            wiped += 1
+
+                logger.info(
+                    f"Wiped metadata from {wiped} files in {folder}."
+                )
+
+            else:
+                logger.info(
+                    "Wipe operation cancelled by user. "
+                    "Sensitive files were not modified."
+                )
+
+        else:
+            logger.info(f"All files in {folder} were clean.")
+
+
+# 
+# FOLDER CHECK
+# 
 
 def load_and_check_folders(watch_dirs):
     for d in watch_dirs:
-        full_path = os.path.expanduser(d)
-        if not os.path.isdir(full_path):
+        full_path = Path(d).expanduser()
+
+        if not full_path.is_dir():
             logger.warning(f"Skipping missing folder: {full_path}")
         else:
-            count = sum(1 for f in Path(full_path).iterdir() if f.is_file())
-            logger.info(f"Found {count} files in {full_path}.")
-def wait_until_stable(path: Path, timeout: float = 10.0, interval: float = 0.3) -> bool:
+            try:
+                count = sum(
+                    1
+                    for f in full_path.iterdir()
+                    if f.is_file()
+                )
+
+                logger.info(
+                    f"Found {count} files in {full_path}."
+                )
+
+            except OSError as e:
+                logger.warning(
+                    f"Could not inspect {full_path}: {e}"
+                )
+
+
+# 
+# FILE STABILITY
+# 
+
+def wait_until_stable(
+    path: Path,
+    timeout: float = 10.0,
+    interval: float = 0.3,
+) -> bool:
+
     end_time = time.time() + timeout
     last_size = -1
+
     while time.time() < end_time:
         try:
             size = path.stat().st_size
         except FileNotFoundError:
             return False
+
         if size == last_size and size > 0:
             return True
+
         last_size = size
         time.sleep(interval)
+
     return False
 
+
+# 
+# METADATA WIPE
+# 
 
 def wipe_image(path: Path):
     try:
@@ -236,33 +421,66 @@ def wipe_image(path: Path):
             check=True,
             capture_output=True,
         )
-    except subprocess.CalledProcessError as e:
-        logger.error(f"exiftool failed on {path}: {e.stderr.decode(errors='ignore')}")
-    except FileNotFoundError:
-        logger.error("exiftool not installed. Run: sudo apt install libimage-exiftool-perl")
 
+        logger.info(f"Metadata cleaned: {path}")
+        return True
+
+    except subprocess.CalledProcessError as e:
+        logger.error(
+            f"exiftool failed on {path}: "
+            f"{e.stderr.decode(errors='ignore')}"
+        )
+        return False
+
+    except FileNotFoundError:
+        logger.error(
+            "exiftool not installed. "
+            "Run: sudo apt install libimage-exiftool-perl"
+        )
+        return False
+
+
+# 
+# WATCHDOG HANDLER
+# 
 
 class NewImageHandler(FileSystemEventHandler):
+
     def on_created(self, event):
         if event.is_directory:
             return
+
         path = Path(event.src_path)
+
         if path.suffix.lower() not in IMAGE_EXTS:
             return
+
         if not wait_until_stable(path):
-            logger.warning(f"File never stabilized, skipping: {path}")
+            logger.warning(
+                f"File never stabilized, skipping: {path}"
+            )
             return
+
         wipe_image(path)
 
     def on_moved(self, event):
         if event.is_directory:
             return
+
         path = Path(event.dest_path)
+
         if path.suffix.lower() not in IMAGE_EXTS:
             return
+
         if not wait_until_stable(path):
+            logger.warning(
+                f"File never stabilized, skipping: {path}"
+            )
             return
-        wipe_image(path)
 
+        success = wipe_image(path)
 
-
+        if not success:
+            logger.error(
+            f"Failed to clean metadata from moved image: {path}"
+            )

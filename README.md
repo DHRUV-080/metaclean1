@@ -1,102 +1,137 @@
-# Meta-Cleaner
+## CLI Options
 
-Meta-Cleaner is a Python command-line utility that automatically removes sensitive EXIF and metadata from images. It can be used interactively, on-demand, or as a background folder watcher to sanitize new images as they arrive.
+Meta-Cleaner provides several command-line options for configuring the watcher when starting the program.
 
-## Features
+### `-f`, `--folder`
 
-- Remove EXIF metadata from supported images
-- Watch one or more folders and clean images automatically
-- Persistent watched-folder configuration
-- Command-line interface with rich help output
-- Logging for processed files and errors
-- Cross-platform configuration and log directories via platformdirs
-
-## Project Structure
-
-```
-meta_cleaner.py     # CLI entry point, argument parsing, watcher lifecycle
-main.py    # Metadata cleaning logic, folder management, event handlers
-```
-
-## Usage
-
-Meta-Cleaner runs as a background folder watcher. Instead of cleaning files manually, it monitors one or more folders and automatically removes metadata from newly added images.
-
-### Watch a Folder
+Adds a folder to the list of folders that Meta-Cleaner should watch.
 
 ```bash
-cli -f ~/Pictures
+python meta_cleaner.py -f ~/Pictures
 ```
 
-The folder is saved to the configuration, so it will be monitored again the next time the application starts.
-
----
-
-### Watch Multiple Folders
+You can specify `-f` multiple times to watch multiple folders:
 
 ```bash
-meta_cleaner \
+python meta_cleaner.py \
     -f ~/Pictures \
     -f ~/Downloads \
     -f ~/Desktop
 ```
 
-Each folder is validated before monitoring begins.
+The folders are saved to the configuration automatically, so they will be loaded the next time Meta-Cleaner starts.
+
+**Use this when:** you want to configure your watched folders when launching Meta-Cleaner.
 
 ---
 
-### Forget Saved Folders
+### `--forget`
 
-Remove every previously saved watch directory.
+Removes **all saved watched folders** from the configuration.
 
 ```bash
-meta_cleaner --forget
+python meta_cleaner.py --forget
 ```
 
-This clears the saved configuration.
+This does not delete the actual folders or any files inside them. It only removes them from Meta-Cleaner's saved watch list.
+
+**Use this when:** you want to start with a completely empty watch list.
 
 ---
 
-### Enable Startup
+### `-r`, `--restart`
+
+Enables the `auto_start` setting in the configuration.
 
 ```bash
-meta_cleaner --restart
+python meta_cleaner.py --restart
 ```
 
-Configures Meta-Cleaner to launch automatically when the system starts (implementation in progress).
+⚠️ **Currently, this does not actually configure Meta-Cleaner to start automatically with the operating system.** The startup/service implementation is still unfinished.
+
+**Use this when:** preparing to enable automatic startup once the startup feature is implemented.
 
 ---
 
-### How It Works
+## Runtime Commands
 
-1. Load saved watch folders.
-2. Add any folders supplied via `-f`.
-3. Save the updated configuration.
-4. Validate each folder.
-5. Start a filesystem observer.
-6. Detect newly created images.
-7. Remove sensitive metadata.
-8. Continue monitoring until the application is stopped.
-
----
-
-### Stopping the Service
-
-Press:
+After Meta-Cleaner has started, folders can also be managed without restarting the program.
 
 ```text
-Ctrl+C
+add <folder>
 ```
 
-to stop the watcher safely.
+Immediately starts watching a new folder:
 
+```text
+meta-cleaner> add ~/Pictures/New
+```
 
-## Future Improvements
-- Parallel processing for large batches
-- Hash-based duplicate detection
-- Optional image optimization after cleaning
-- File integrity verification
-- System tray background service
-- Localization
-- Performance benchmarking
-- Comprehensive API for library usage
+---
+
+```text
+remove <folder>
+```
+
+Stops watching a specific folder:
+
+```text
+meta-cleaner> remove ~/Pictures/New
+```
+
+You can also remove a folder by its number:
+
+```text
+meta-cleaner> remove 2
+```
+
+---
+
+```text
+list
+```
+
+Displays all currently watched folders:
+
+```text
+meta-cleaner> list
+
+1. /home/user/Pictures
+2. /home/user/Downloads
+3. /home/user/Desktop
+```
+
+---
+
+```text
+help
+```
+
+Displays the available runtime commands.
+
+---
+
+```text
+quit
+```
+
+or:
+
+```text
+exit
+```
+
+Stops Meta-Cleaner safely.
+
+### CLI vs Runtime Commands
+
+| Feature            | CLI           | Runtime           |
+| ------------------ | ------------- | ----------------- |
+| Add folder         | `-f <folder>` | `add <folder>`    |
+| Remove folder      | —             | `remove <folder>` |
+| List folders       | —             | `list`            |
+| Forget all folders | `--forget`    | —                 |
+| Auto-start setting | `--restart`   | —                 |
+| Stop program       | —             | `quit` / `exit`   |
+
+**In short:** use the CLI options when **starting** Meta-Cleaner, and use the runtime commands when you want to manage the watcher **without restarting it**.
